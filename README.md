@@ -1,7 +1,7 @@
 # evolucionCOVID
 COMPARACIÓN EVOLUTIVA DE PACIENTES COVID.COYOACÁN VS IZTAPALAPA, CDMX.
 
-Este trabajo lo realicé durante séptimo semestre para la asignatura de Optimización de Operaciones. 
+Este trabajo lo realicé durante séptimo semestre para la asignatura de Optimización de Operaciones con la ayuda de R Studio. 
 
 Objetivos:
 
