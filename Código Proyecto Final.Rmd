@@ -1,0 +1,362 @@
+---
+title: "Proyecto FINAL"
+author: "DIMAS RAMIREZ LUIS DANIEL"
+date: "26/1/2021"
+output:
+  word_document: default
+  html_document: default
+---
+## Coyoácan
+
+# Preparación de Datos 
+
+Importé la base de datos desde el archivo .csv almacenado en mi unidad. 
+
+```{r}
+library(dplyr)
+library(readr)
+library(Biodem)
+
+base_covid <- read_csv("base.csv")
+
+#summary(base_covid)
+names(base_covid)
+#View(base_covid$fecha_de_registro)
+#View(base_covid$fecha_defuncion)
+#View(base_covid$tipo_paciente)
+#View(base_covid$evolucion_caso)
+
+#defuncion_confirmada <- base_covid$evolucion_caso[base_covid$evolucion_caso=="DEFUNCION"]
+
+#base_covid %>%
+  #filter(evolucion_caso=="DEFUNCION")
+```
+
+En el código anterior, soalmente visualicé algunos datos para darme una idea de la forma en la que voy a organizarme. 
+
+La base de datos cuenta con 91 columnas, de las cuales, para el fin del desarrollo de Cadenas de Markov utilizaré la información de la columna "tipo_paciente"  para establecer nuestro estado inicial, "evolucion_caso", "semana_defuncion",  "fecha_ingreso"  para determinar las probabilidades del siguiente estado.
+
+Ahora creare una nueva base de datos, a apartir del análisis anterior, pero solamente con la información que me interesa para este trabajo. 
+
+# Nueva Base de Datos 
+
+En esta parte, realice una nueva base, con las columnas objetivo y realice un análisis del promedio de semana de muertes de los pacientes registrados para establecer un número máximo de periodos para las cadenas de Markov. 
+
+```{r}
+
+bcovid <- select(base_covid, tipo_paciente, evolucion_caso, fecha_ingreso, semana_defuncion)
+bcovid
+
+head(bcovid)
+
+mean_death <- filter(bcovid, semana_defuncion>0)
+
+summary(bcovid$semana_defuncion)
+
+#bcovid %>%
+  #filter(semana_defuncion>52)
+
+#bcovid %>%
+  #filter(semana_defuncion<2)
+```
+
+- 43 personas murieron en la primera semana después de ser ingresados. 
+
+- 40 personas murieron después de 13 meses. 
+
+- El promedio de muertes (en semanas) es de 28.5, al rededor de 6 meses. 
+
+- Un periodo estará constituido por 4 semanas. 
+
+Ahora voy a obtener los datos para hacer la matriz de las cadenas de Markov. 
+
+```{r}
+bcovid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="EN TRATAMIENTO")
+
+bcovid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="SEGUIMIENTO DOMICILIARIO")
+
+bcovid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="DEFUNCION")
+
+bcovid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="SEGUIMIENTO TERMINADO")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - MEJORIA")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - VOLUNTARIA")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - CURACION")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="CASO GRAVE -")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="CASO NO GRAVE")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - TRASLADO")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="CASO GRAVE - TRASLADO")
+
+bcovid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="DEFUNCION")
+
+bcovid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso != "EN TRATAMIENTO", evolucion_caso != "SEGUIMIENTO TERMINADO", evolucion_caso != "SEGUIMIENTO DOMICILIARIO", evolucion_caso != "DEFUNCION")
+
+
+```
+
+
+# Realizando la matriz de cadenas de markov 
+
+```{r}
+da <- c(1,0,0,0,0, 1635/5051,0,11393/20204, 2135/20204, 34/5051, 0,0,1,0,0, 16/1735, 0, 656/1735, 396/1735, 667/1735, 0, 0, 0, 0, 1)
+
+matrizmarkov <- matrix(da, nrow = 5, ncol = 5, byrow = TRUE)
+matrizmarkov
+
+ESTADOS <- c("E1", "E2","E3", "E4","E5")
+E1 <- c(1,0,0,0,0)*100
+E2 <- round(c(1635/5051,0,11393/20204, 2135/20204, 34/5051)*100,2)
+E3 <- c(0,0,1,0,0)*100
+E4 <- round(c(16/1735, 0, 656/1735, 396/1735, 667/1735)*100,2)
+E5 <- c(0,0,0,0,1)*100
+Tablaf <- data.frame(rbind(ESTADOS, E1, E2, E3, E4, E5))
+Tablaf
+```
+
+# Buscando la matriz de estado estable 
+
+Se busca la matriz en estado estable 
+
+```{r}
+estable1 <- mtx.exp(matrizmarkov, 10000000000000)
+estable1
+```
+
+De aquí determino las probabilidades definitivas para cada estado
+
+# Tasa de mortalidad y tasa de recuperación 
+
+Vector de entrada
+
+```{r}
+ventrada <- c(0,20204/21939,0,1735/21939,0)
+```
+ Tasa de mortalidad 
+ 
+```{r}
+mortalidad <- ventrada%*%estable1[,5]
+mortalidad*100
+```
+ 
+Tasa de recuperación
+```{r}
+recuperacion <- ventrada%*%estable1[,1]
+recuperacion*100
+
+```
+
+# ¿Cuáles son las probabilidades de un paciente con COVID-19 en estado ambulatorio al cabo de  3 meses?
+
+-3 meses = 12 periodos
+```{r}
+docep <- mtx.exp(matrizmarkov, 12)
+docepf <-round(docep[2,]*100,2)
+docepf
+```
+
+Las probabilidades de que sane, se mantenga en ese estado, requiera tratamiento de manera casera, tenga que ser hospitalizado y muera, de manera consecutiva son: `r docepf`
+
+# ¿Cuáles son las probabilidades de un paciente con COVID-19 en estado de hospitalización al cabo de  3 meses?
+
+-3 meses = 12 periodos
+```{r}
+tresp <- mtx.exp(matrizmarkov, 12)
+trespf <-round(tresp[4,]*100,2)
+trespf
+```
+
+Las probabilidades de que sane, se mantenga en ese estado, requiera tratamiento de manera casera, tenga que ser hospitalizado y muera, de manera consecutiva son: `r trespf`
+
+
+
+## Iztapalapa
+
+```{r}
+
+biztapalapa <- read_csv("iztapalapa.csv")
+
+head(biztapalapa)
+#summary(biztapalapa)
+```
+
+50,867 registros
+
+
+En el código anterior, soalmente visualicé algunos datos para darme una idea de la forma en la que voy a organizarme. 
+
+La base de datos cuenta con 91 columnas, de las cuales, para el fin del desarrollo de Cadenas de Markov utilizaré la información de la columna "tipo_paciente"  para establecer nuestro estado inicial, "evolucion_caso", "semana_defuncion",  "fecha_ingreso"  para determinar las probabilidades del siguiente estado.
+
+Ahora creare una nueva base de datos, a apartir del análisis anterior, pero solamente con la información que me interesa para este trabajo. 
+
+# Nueva Base de Datos 
+
+En esta parte, realice una nueva base, con las columnas objetivo y realice un análisis del promedio de semana de muertes de los pacientes registrados para establecer un número máximo de periodos para las cadenas de Markov.
+
+```{r}
+
+izt_covid <- select(biztapalapa, tipo_paciente, evolucion_caso, fecha_ingreso, semana_defuncion)
+
+izt_covid
+
+head(izt_covid)
+
+#izt_covid %>%
+     #filter(semana_defuncion>52)
+
+#izt_covid %>%
+     #filter(semana_defuncion<2)
+
+```
+
+- 98 personas murieron en la primera semana después de ser ingresados. 
+
+- 63 personas murieron después de 13 meses. 
+
+
+Ahora voy a obtener los datos para hacer la matriz de las cadenas de Markov. 
+
+```{r}
+izt_covid %>%
+  filter(tipo_paciente== "AMBULATORIO")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO")
+
+izt_covid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="EN TRATAMIENTO")
+
+izt_covid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="SEGUIMIENTO DOMICILIARIO")
+
+izt_covid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="DEFUNCION")
+
+izt_covid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso=="SEGUIMIENTO TERMINADO")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - MEJORIA")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - VOLUNTARIA")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - CURACION")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="CASO GRAVE -")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="CASO NO GRAVE")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="ALTA - TRASLADO")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="CASO GRAVE - TRASLADO")
+
+izt_covid %>%
+  filter(tipo_paciente=="HOSPITALIZADO", evolucion_caso=="DEFUNCION")
+
+izt_covid %>%
+  filter(tipo_paciente== "AMBULATORIO", evolucion_caso != "EN TRATAMIENTO", evolucion_caso != "SEGUIMIENTO TERMINADO", evolucion_caso != "SEGUIMIENTO DOMICILIARIO", evolucion_caso != "DEFUNCION")
+
+
+```
+
+# Realizando la matriz de cadenas de markov para Iztapalapa
+
+```{r}
+da_iz <- c(1,0,0,0,0, 20749/47505,0,7145/47505, 19331/47505, 280/47505, 0,0,1,0,0, 26/3362, 0, 1040/3362, 1016/3362, 1280/3362, 0, 0, 0, 0, 1)
+
+matrizmarkov_iz <- matrix(da_iz, nrow = 5, ncol = 5, byrow = TRUE)
+matrizmarkov_iz
+
+ESTADOS <- c("E1", "E2","E3", "E4","E5")
+e1 <- c(1,0,0,0,0)*100
+e2 <- round(c(20749/47505,0,7145/47505, 19331/47505, 280/47505)*100,2)
+e3 <- c(0,0,1,0,0)*100
+e4 <- round(c( 26/3362, 0, 1040/3362, 1016/3362, 1280/3362)*100,2)
+e5 <- c(0,0,0,0,1)*100
+Tablaf_iz <- data.frame(rbind(ESTADOS, e1, e2, e3, e4, e5))
+Tablaf_iz
+```
+
+# Buscando la matriz de estado estable 
+
+Se busca la matriz en estado estable 
+
+```{r}
+estable2 <- mtx.exp(matrizmarkov_iz, 10000000000000)
+estable2
+```
+
+De aquí determino las probabilidades definitivas para cada estado
+
+# Tasa de mortalidad y tasa de recuperación 
+
+Vector de entrada
+
+```{r}
+ventrada_iz <- c(0,47505/50867,0,3362/50867,0)
+```
+ Tasa de mortalidad 
+ 
+```{r}
+mortalidad_iz <- ventrada_iz%*%estable2[,5]
+mortalidad_iz*100
+```
+
+Tasa de recuperación
+```{r}
+recuperacion_iz <- ventrada_iz%*%estable2[,1]
+recuperacion_iz*100
+```
+
+
+# ¿Cuáles son las probabilidades de un paciente con COVID-19 en estado ambulatorio al cabo de  3 meses?
+
+-3 meses = 12 periodos
+```{r}
+docep_iz <- mtx.exp(matrizmarkov_iz, 12)
+docepf_iz <-round(docep_iz[2,]*100,2)
+docepf_iz
+```
+
+
+Las probabilidades de que sane, se mantenga en ese estado, requiera tratamiento de manera casera, tenga que ser hospitalizado y muera, de manera consecutiva son: `r docepf_iz`
+
+# ¿Cuáles son las probabilidades de un paciente con COVID-19 en estado de hospitalización al cabo de  3 meses?
+
+-3 meses = 12 periodos
+```{r}
+tresp_iz <- mtx.exp(matrizmarkov_iz, 12)
+trespf_iz <-round(tresp_iz[4,]*100,2)
+trespf_iz
+
+```
+
+
+Las probabilidades de que sane, se mantenga en ese estado, requiera tratamiento de manera casera, tenga que ser hospitalizado y muera, de manera consecutiva son: `r trespf_iz`
+
+
+
